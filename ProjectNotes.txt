@@ -1,0 +1,60 @@
+Digital cameras can detect infra-red light but our eyes can't. Use a digital camera, webcam or camcorder and look through the digital viewfinder at the IR LEDs, after pressing the button, the LEDs should flash.
+
+Super-bright 5mm IR LED - 940nm
+PRODUCT ID: 387
+$0.75
+IN STOCK
+
+5mm 940nm IR Emitter / Receiver LED Transparent Light Diode 53F3C 53P3C Infrared
+
+
+
+	
+If your Vcc is not an LED driver (constant-current source), you will likely want a current-limiting resistor of at least 200O. The datasheet you linked to shows a voltage drop of about 1.2V and a current draw of nominal 20mA V/A=R => (5V - 1.2V) / 0.020mA =>190O – jose can u c Dec 7 '16 at 14:11
+
+https://learn.adafruit.com/ir-sensor/testing-an-ir-sensor
+
+https://learn.adafruit.com/ir-sensor/ir-remote-signals
+
+You can measure the frequency of the IR pulses. As you can tell by the cursors and the measurements on the side, the frequency is about 37.04KHz
+OK so now we can understand how IR codes are sent. The IR transmitter LED is quickly pulsed (PWM - pulse width modulated) at a high frequency of 38KHz and then that PWM is likewise pulsed on and off much slower, at times that are about 1-3 ms long.
+Why not have the LED just on and off? Why have PWM 'carrier' pulsing? Many reasons!
+One reason is that this lets the LED cool off. IR LEDs can take up to 1 Amp (1000 milliamps!) of current. Most LEDs only take 20mA or so. This means IR LEDs are designed for high-power blasting BUT they can only take it for a few microseconds. By PWM'ing it, you let the LED cool off half the time
+Another reason is that the TV will only listen to certain frequencies of PWM. So a Sony remote at 37KHz wont be able to work with a JVC DVD player that only wants say 50KHz.
+Finally, the most important reason is that by pulsing a carrier wave, you reduce the affects of ambient lighting. The TV only looks for changes in light levels that clock in around 37KHz. Just like its easier for us to tell differences between audio tones than to pin down the precsise pitch of a tone (well, for most people at least)
+OK so now we know the carrier frequency. Its 37KHz. Next lets find the pulse widths!
+
+So lets say you don't have a $1000 oscilloscope, how else can you read these signals? Well the IR decoder such as the PNA4602 does us one favor, it 'filters out' the 38KHz signal so that we only get the big chunks of signal in the milliscond range. This is much easier for a microcontroller to handle. Thats what we'll do in the next section!
+
+https://github.com/adafruit/Nikon-Intervalometer
+
+https://learn.adafruit.com/ir-sensor/making-an-intervalometer
+
+
+d in Pronto hex format
+
+http://forum.arduino.cc/index.php?topic=19312.0
+
+http://www.remotecentral.com/cgi-bin/codes/samsung/tv_functions/
+http://www.remotecentral.com/cgi-bin/codes/samsung/tv_functions/
+
+Power
+(Copy to Clipboard)
+0000 006d 0022 0003 00a9 00a8 0015 003f 0015 003f 0015 003f 0015 0015 0015 0015 0015 0015 0015 0015 0015 0015 0015 003f 0015 003f 0015 003f 0015 0015 0015 0015 0015 0015 0015 0015 0015 0015 0015 0015 0015 003f 0015 0015 0015 0015 0015 0015 0015 0015 0015 0015 0015 0015 0015 0040 0015 0015 0015 003f 0015 003f 0015 003f 0015 003f 0015 003f 0015 003f 0015 0702 00a9 00a8 0015 0015 0015 0e6e
+
+
+http://www.hifi-remote.com/infrared/IR-PWM.shtml
+
+The ProntoEdit HEX Format.
+
+This discussion is only completely valid for IR transmissions using Pulse Width Modulation. Keep in mind that the sole purpose of the HEX data is to represent a series of ON and OFF times for the IR emitter, and when the IR emitter appear to be solidly ON its is rapidly flashing.
+The ProntoEdit HEX format uses a pair of numbers to represent an on/off sequence. We will call this a "Burst Pair" (thanks to AHP). The first digit represents an ON time and the second an Off time.
+The question is how much time? What the burst pair really contains is the number of cycles of the carrier for which to turn the light on and off. The carrier frequency therefor acts as the clock (not totally true, but good enough for this discussion). To illustrate the point, let us assume a carrier frequency of 40 kilohertz (that is 40,000 cycles per second). This is a very common IR carrier frequency. One cycle of that carrier takes 1/40000 units of time or 25 microseconds. A "burst pair" of 48,24 would turn the IR emitter on for 48*25 Microseconds, and off for 24*25 microseconds. A "burst Pair" of 24,24 would turn the IR emitter on for 24*25 Microseconds, and off for 24*25 microseconds. Because we are using binary numbers we only have two digits to represent (0,1) as opposed to decimal where we would need 10 unique burst pair patterns to represent the 10 decimal digits.
+We could for example decide the encoding of a "1" will be represented by having the On period twice as long as the Off period, and a "0" by having them equal. We might choose 48,24 for the "1" and 24,24 for the "0". In fact this is what Sony has done in its IR remotes. [Note: If you work through the numbers you will find that Sony IR signaling uses a sequence of 1200 microseconds of light followed by 600 microseconds of no light to represent a "1"; and a sequence of 600 microseconds of light followed by 600 microseconds of no light to represent a "0"]. In general all IR equipment is forgiving and operates with in a timing tolerance of +/- 10%.
+A full IR key code as encoded in the ProntoEdit Hex display contains three discrete parts.
+
+
+
+http://www.righto.com/2009/08/multi-protocol-infrared-remote-library.html
+
+https://github.com/z3t0/Arduino-IRremote
