@@ -45,7 +45,8 @@ volatile int recordedPress = 0;
 #define STATE_CODE_LEARNING 1 // Short button press
 #define STATE_CODE_KNOWN    2
 #define STATE_CODE_SENDING  3 // Short button press
-#define STATE_CODE_CLEAR    4 // Long button press
+#define STATE_CODE_PREPROG  4 // Long button press
+#define STATE_CODE_CLEAR    5 // Long button press
 byte m_currentState;
 
 void setup() {
@@ -115,6 +116,9 @@ void SedLEDForState()
     case STATE_CODE_SENDING:
       SetLEDForBrightNoFade();
     break;
+    case STATE_CODE_PREPROG:
+      SetLEDForHalfBrightNoFade();
+    break;
     case STATE_CODE_CLEAR:      
     break;
   }
@@ -163,6 +167,8 @@ int GetAndClearAnyButtonPress()
 
 void loop() {
 
+
+
   switch (GetCurrentState())
   {
     case STATE_NO_CODE:
@@ -176,6 +182,9 @@ void loop() {
     break;
     case STATE_CODE_SENDING:
       stateCodeSending();
+    break;
+    case STATE_CODE_PREPROG:
+      stateCodePreProg();
     break;
     case STATE_CODE_CLEAR:
       stateCodeClear();
@@ -221,7 +230,7 @@ void  stateCodeKnown(){
     ProgressToState(STATE_CODE_SENDING); 
   
   if (longButtonPressDetected)
-    ProgressToState(STATE_CODE_CLEAR);
+    ProgressToState(STATE_CODE_PREPROG);
 }
 
 void  stateCodeSending(){
@@ -240,6 +249,25 @@ void  stateCodeSending(){
     }
     
   ProgressToState(STATE_CODE_KNOWN);  
+}
+
+void stateCodePreProg()
+{
+  // Pre-program code:  
+  int buttonPress = GetAndClearAnyButtonPress();
+  boolean shortButtonPressDetected = (buttonPress == STATE_SHORT);
+  boolean longButtonPressDetected = (buttonPress == STATE_LONG);
+  
+  if (shortButtonPressDetected)
+  {   
+    digitalWrite(FADE_LED_PIN, HIGH);   // turn the LED on (HIGH is the voltage level
+   irsend.sendSAMSUNG(0xE0E040BF, 32);    
+    delay(40);
+    digitalWrite(FADE_LED_PIN, LOW);    // turn the LED off by making the voltage LOW
+  }
+  
+  if (longButtonPressDetected)
+    ProgressToState(STATE_CODE_CLEAR);
 }
   
 void  stateCodeClear(){
@@ -289,6 +317,7 @@ void storeCode(decode_results *results) {
   else {
     if (codeType == NEC) {
       Serial.print("Received NEC: ");
+      // My BT box result seems to be NEC, which this library/hardware seems unable to decode.
       if (results->value == REPEAT) {
         // Don't record a NEC repeat value as that's useless.
         Serial.println("repeat; ignoring.");
