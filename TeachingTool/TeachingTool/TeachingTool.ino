@@ -14,7 +14,7 @@
 
 static const byte BUTTON_PIN = 2;
 volatile int  resultButton = 0; // global value set by checkButton()
-
+volatile int recordedPress = 0;
 
 byte m_currentState;
 
@@ -32,7 +32,7 @@ void setup() {
   pinMode(LED_PIN,OUTPUT);
   digitalWrite(LED_PIN, LOW );
 
-  m_currentState = STATE_NO_CODE;
+  ProgressToState(STATE_NO_CODE);
   
 }
 
@@ -122,17 +122,16 @@ int ProgressToState(int newState)
   SedLEDForState();
 }
 
+int GetAndClearAnyButtonPress()
+{
+  // If there is a record of a button press, get it and clear the record of it
+  int toReturn = recordedPress;
+  if (recordedPress > 0)
+    recordedPress  = 0;
+  return toReturn;
+}
+
 void loop() {
-
-  if (resultButton == STATE_NORMAL)
-    SetLEDForOffNoFade();
-    
-  if (resultButton == STATE_SHORT)
-    SetLEDForFastFade();
-  
-  if (resultButton == STATE_LONG)
-    SetLEDForHalfBrightNoFade();
-
 
   switch (GetCurrentState())
   {
@@ -157,8 +156,10 @@ void loop() {
   
 }
 
+
+
 void  stateNoCode(){
-  boolean longButtonPressDetected = false;
+  boolean longButtonPressDetected = (GetAndClearAnyButtonPress() == STATE_LONG);
   if (longButtonPressDetected)
     ProgressToState(STATE_CODE_LEARNING);
 }
@@ -170,11 +171,12 @@ void  stateCodeLearning(){
 }
 
 void  stateCodeKnown(){
-  boolean shortButtonPressDetected = false;
+  int buttonPress = GetAndClearAnyButtonPress();
+  boolean shortButtonPressDetected = (buttonPress == STATE_SHORT);
   if (shortButtonPressDetected)
     ProgressToState(STATE_CODE_SENDING);  
 
-  boolean longButtonPressDetected = false;
+  boolean longButtonPressDetected = (buttonPress == STATE_LONG);
   if (longButtonPressDetected)
     ProgressToState(STATE_CODE_CLEAR);
 }
@@ -191,28 +193,7 @@ void  stateCodeClear(){
   ProgressToState(STATE_NO_CODE);
 }
 
-
-void pin_ISR() {
-  int value = digitalRead(SWITCH_PIN);
-  Serial.println(value);   
-  if ( value == LOW ) {
-    digitalWrite(LED_PIN, HIGH );
-  } 
-  else {
-    digitalWrite(LED_PIN, LOW );
-  }
-}
-
-
-//*****************************************************************
 void checkButton() {
-  /*
-  * This function implements software debouncing for a two-state button.
-  * It responds to a short press and a long press and identifies between
-  * the two states. Your sketch can continue processing while the button
-  * function is driven by pin changes.
-  */
-
   const unsigned long LONG_DELTA = 1000ul;               // hold seconds for a long press
   const unsigned long DEBOUNCE_DELTA = 30ul;        // debounce time
   static int lastButtonStatus = HIGH;                                   // HIGH indicates the button is NOT pressed
@@ -244,9 +225,11 @@ void checkButton() {
   if (timeoutLong && Released) {                                      // long timeout has occurred and the button was just released
        resultButton = STATE_LONG | resultButton;       // ensure the button result reflects a long press
        Serial.println("Long press detected");
+       recordedPress = STATE_LONG;
   } else if (timeoutShort && Released) {                          // short timeout has occurred (and not long timeout) and button was just released
       resultButton = STATE_SHORT | resultButton;     // ensure the button result reflects a short press
       Serial.println("Short press detected");
+      recordedPress = STATE_SHORT;
   } else {                                                                                  // else there is no change in status, return the normal state
       resultButton = STATE_NORMAL | resultButton; // with no change in status, ensure no change in button status
   }
