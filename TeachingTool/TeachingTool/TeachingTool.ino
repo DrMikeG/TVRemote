@@ -1,4 +1,20 @@
-#include <IRremote.h>
+/* record.ino Example sketch for IRLib2
+ *  Illustrate how to record a signal and then play it back.
+ */
+#include <IRLibDecodeBase.h>  //We need both the coding and
+#include <IRLibSendBase.h>    // sending base classes
+#include <IRLib_P01_NEC.h>    //Lowest numbered protocol 1st
+#include <IRLib_P02_Sony.h>   // Include only protocols you want
+#include <IRLib_P03_RC5.h>
+#include <IRLib_P04_RC6.h>
+#include <IRLib_P05_Panasonic_Old.h>
+#include <IRLib_P07_NECx.h>
+#include <IRLib_HashRaw.h>    //We need this for IRsendRaw
+#include <IRLibCombo.h>       // After all protocols, include this
+
+
+#include <IRLibRecv.h>
+
 
 // Pins to break out:
 //GND
@@ -21,13 +37,21 @@ int fadeAmount = 4;    // how many points to fade the LED by
 // Mid leg GND
 // Right leg D11
 int RECV_PIN = 11;
-IRrecv irrecv(RECV_PIN);
+IRrecv myReceiver(RECV_PIN); //pin number for the receiver
 
 // IR LED 
 // Resistor leg D3
 // Black leg GND
-IRsend irsend;
-decode_results results;
+// Storage for the recorded code
+IRdecode myDecoder;
+IRsend mySender; // pin 3
+uint8_t codeProtocol;  // The type of code
+uint32_t codeValue;    // The data bits if type is not raw
+uint8_t codeBits;      // The length of the code in bits
+
+//These flags keep track of whether we received the first code 
+//and if we have have received a new different code from a previous one.
+bool gotOne, gotNew; 
 
 
 // Button press
@@ -45,8 +69,7 @@ volatile int recordedPress = 0;
 #define STATE_CODE_LEARNING 1 // Short button press
 #define STATE_CODE_KNOWN    2
 #define STATE_CODE_SENDING  3 // Short button press
-#define STATE_CODE_PREPROG  4 // Long button press
-#define STATE_CODE_CLEAR    5 // Long button press
+#define STATE_CODE_CLEAR    4 // Long button press
 byte m_currentState;
 
 void setup() {
@@ -63,7 +86,11 @@ void setup() {
   pinMode(LED_PIN,OUTPUT);
   digitalWrite(LED_PIN, LOW );
 
-  irrecv.enableIRIn(); // Start the receiver
+  gotOne=false; gotNew=false;
+  codeProtocol=UNKNOWN; 
+  codeValue=0; 
+
+  myReceiver.enableIRIn(); // Start the receiver
   
   ProgressToState(STATE_NO_CODE);
   
@@ -115,9 +142,6 @@ void SedLEDForState()
     break;
     case STATE_CODE_SENDING:
       SetLEDForBrightNoFade();
-    break;
-    case STATE_CODE_PREPROG:
-      SetLEDForHalfBrightNoFade();
     break;
     case STATE_CODE_CLEAR:      
     break;
@@ -183,9 +207,6 @@ void loop() {
     case STATE_CODE_SENDING:
       stateCodeSending();
     break;
-    case STATE_CODE_PREPROG:
-      stateCodePreProg();
-    break;
     case STATE_CODE_CLEAR:
       stateCodeClear();
     break;
@@ -206,18 +227,18 @@ void  stateCodeLearning(){
   boolean newCodeLearnt = false;
   //Serial.println("stateCodeLearning");
 
- 
-  if (irrecv.decode(&results)) {
-    //Serial.println("decoded");
-    storeCode(&results);
-    irrecv.resume(); // resume receiver    
+
+ if (myReceiver.getResults()) {
+    myDecoder.decode();
+    storeCode();
     newCodeLearnt = true;
+    myReceiver.enableIRIn(); // Re-enable receiver
   }
   
   if (newCodeLearnt)
     ProgressToState(STATE_CODE_KNOWN);
 
-  irrecv.enableIRIn(); // Start the receiver
+  myReceiver.enableIRIn(); // Start the receiver
  
 }
 
@@ -230,44 +251,17 @@ void  stateCodeKnown(){
     ProgressToState(STATE_CODE_SENDING); 
   
   if (longButtonPressDetected)
-    ProgressToState(STATE_CODE_PREPROG);
+    ProgressToState(STATE_CODE_CLEAR);
 }
 
 void  stateCodeSending(){
-/*
-    // Working
-  for (int i = 0; i < 3; i++) {
-    irsend.sendSAMSUNG(0xE0E040BF, 32);    
-    delay(40);
-  }
-*/
 
-    for (int repeat = 0; repeat < 1; repeat++)
-    {
-      sendCode(repeat != 0);
-      delay(5); // Wait a bit between retransmissions
-    }
+  if(gotOne) {
+    sendCode();
+    myReceiver.enableIRIn(); // Re-enable receiver
+  }
     
   ProgressToState(STATE_CODE_KNOWN);  
-}
-
-void stateCodePreProg()
-{
-  // Pre-program code:  
-  int buttonPress = GetAndClearAnyButtonPress();
-  boolean shortButtonPressDetected = (buttonPress == STATE_SHORT);
-  boolean longButtonPressDetected = (buttonPress == STATE_LONG);
-  
-  if (shortButtonPressDetected)
-  {   
-    digitalWrite(FADE_LED_PIN, HIGH);   // turn the LED on (HIGH is the voltage level
-   irsend.sendSAMSUNG(0xE0E040BF, 32);    
-    delay(40);
-    digitalWrite(FADE_LED_PIN, LOW);    // turn the LED off by making the voltage LOW
-  }
-  
-  if (longButtonPressDetected)
-    ProgressToState(STATE_CODE_CLEAR);
 }
   
 void  stateCodeClear(){
@@ -280,132 +274,60 @@ void  stateCodeClear(){
  * IR Code
  * 
  */
-// Storage for the recorded code
-int codeType = -1; // The type of code
-unsigned long codeValue; // The code value if not raw
-unsigned int rawCodes[RAWBUF]; // The durations if raw
-int codeLen; // The length of the co
-int toggle = 0; // The RC5/6 toggle state
-
 // Stores the code for later playback
-// Most of this code is just logging
-void storeCode(decode_results *results) {
-  codeType = results->decode_type;
-  //int count = results->rawlen;
-  if (codeType == UNKNOWN) {
-    Serial.println("Received unknown code, saving as raw");
-    codeLen = results->rawlen - 1;
-    // To store raw codes:
-    // Drop first value (gap)
-    // Convert from ticks to microseconds
-    // Tweak marks shorter, and spaces longer to cancel out IR receiver distortion
-    for (int i = 1; i <= codeLen; i++) {
-      if (i % 2) {
-        // Mark
-        rawCodes[i - 1] = results->rawbuf[i]*USECPERTICK - MARK_EXCESS;
-        Serial.print(" m");
-      } 
-      else {
-        // Space
-        rawCodes[i - 1] = results->rawbuf[i]*USECPERTICK + MARK_EXCESS;
-        Serial.print(" s");
-      }
-      Serial.print(rawCodes[i - 1], DEC);
-    }
-    Serial.println("");
+void storeCode(void) {
+  gotNew=true;    gotOne=true;
+  codeProtocol = myDecoder.protocolNum;
+  Serial.print(F("Received "));
+  Serial.print(Pnames(codeProtocol));
+  if (codeProtocol==UNKNOWN) {
+    Serial.println(F(" saving raw data."));
+    myDecoder.dumpResults();
+    codeValue = myDecoder.value;
   }
   else {
-    if (codeType == NEC) {
-      Serial.print("Received NEC: ");
-      // My BT box result seems to be NEC, which this library/hardware seems unable to decode.
-      if (results->value == REPEAT) {
-        // Don't record a NEC repeat value as that's useless.
-        Serial.println("repeat; ignoring.");
-        // Assuming Samsung TV off...
-        
-        return;
-      }
-    } 
-    else if (codeType == SONY) {
-      Serial.print("Received SONY: ");
-    } 
-    else if (codeType == PANASONIC) {
-      Serial.print("Received PANASONIC: ");
+    if (myDecoder.value == REPEAT_CODE) {
+      // Don't record a NEC repeat value as that's useless.
+      Serial.println(F("repeat; ignoring."));
+    } else {
+      codeValue = myDecoder.value;
+      codeBits = myDecoder.bits;
     }
-    else if (codeType == JVC) {
-      Serial.print("Received JVC: ");
-    }
-    else if (codeType == RC5) {
-      Serial.print("Received RC5: ");
-    } 
-    else if (codeType == RC6) {
-      Serial.print("Received RC6: ");
-    } 
-    else if (codeType == SAMSUNG) {
-      Serial.print("Received SAMSUNG: ");
-    } 
-    else {
-      Serial.print("Unexpected codeType ");
-      Serial.print(codeType, DEC);
-      Serial.println("");
-    }
-    Serial.println(results->value, HEX);
-    codeValue = results->value;
-    codeLen = results->bits;
+    Serial.print(F(" Value:0x"));
+    Serial.println(codeValue, HEX);
   }
 }
-
-void sendCode(int repeat) {
-  if (codeType == NEC) {
-    if (repeat) {
-      irsend.sendNEC(REPEAT, codeLen);
-      Serial.println("Sent NEC repeat");
-    } 
-    else {
-      irsend.sendNEC(codeValue, codeLen);
-      Serial.print("Sent NEC ");
-      Serial.println(codeValue, HEX);
+void sendCode(void) {
+  if( !gotNew ) {//We've already sent this so handle toggle bits
+    if (codeProtocol == RC5) {
+      codeValue ^= 0x0800;
     }
-  } 
-  else if (codeType == SONY) {
-    irsend.sendSony(codeValue, codeLen);
-    Serial.print("Sent Sony ");
-    Serial.println(codeValue, HEX);
-  } 
-  else if (codeType == PANASONIC) {
-    irsend.sendPanasonic(codeValue, codeLen);
-    Serial.print("Sent Panasonic");
-    Serial.println(codeValue, HEX);
-  }
-  else if (codeType == JVC) {
-    irsend.sendJVC(codeValue, codeLen, false);
-    Serial.print("Sent JVC");
-    Serial.println(codeValue, HEX);
-  }
-  else if (codeType == RC5 || codeType == RC6) {
-    if (!repeat) {
-      // Flip the toggle bit for a new button press
-      toggle = 1 - toggle;
+    else if (codeProtocol == RC6) {
+      switch(codeBits) {
+        case 20: codeValue ^= 0x10000; break;
+        case 24: codeValue ^= 0x100000; break;
+        case 28: codeValue ^= 0x1000000; break;
+        case 32: codeValue ^= 0x8000; break;
+      }      
     }
-    // Put the toggle bit into the code to send
-    codeValue = codeValue & ~(1 << (codeLen - 1));
-    codeValue = codeValue | (toggle << (codeLen - 1));
-    if (codeType == RC5) {
-      Serial.print("Sent RC5 ");
-      Serial.println(codeValue, HEX);
-      irsend.sendRC5(codeValue, codeLen);
-    } 
-    else {
-      irsend.sendRC6(codeValue, codeLen);
-      Serial.print("Sent RC6 ");
-      Serial.println(codeValue, HEX);
-    }
-  } 
-  else if (codeType == UNKNOWN /* i.e. raw */) {
-    // Assume 38 KHz
-    irsend.sendRaw(rawCodes, codeLen, 38);
-    Serial.println("Sent raw");
   }
+  gotNew=false;
+  if(codeProtocol== UNKNOWN) {
+    //The raw time values start in decodeBuffer[1] because
+    //the [0] entry is the gap between frames. The address
+    //is passed to the raw send routine.
+    codeValue=(uint32_t)&(recvGlobal.decodeBuffer[1]);
+    //This isn't really number of bits. It's the number of entries
+    //in the buffer.
+    codeBits=recvGlobal.decodeLength-1;
+    Serial.println(F("Sent raw"));
+  }
+  mySender.send(codeProtocol,codeValue,codeBits);
+  if(codeProtocol==UNKNOWN) return;
+  Serial.print(F("Sent "));
+  Serial.print(Pnames(codeProtocol));
+  Serial.print(F(" Value:0x"));
+  Serial.println(codeValue, HEX);
 }
 
 
