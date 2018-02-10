@@ -9,7 +9,9 @@ int fadeAmount = 4;    // how many points to fade the LED by
 // IR receiver
 int RECV_PIN = 11;
 IRrecv irrecv(RECV_PIN);
+IRsend irsend;
 decode_results results;
+
 
 // Button press
 #define SWITCH_PIN 2 // Pin D2
@@ -191,18 +193,21 @@ void  stateCodeLearning(){
 void  stateCodeKnown(){
   int buttonPress = GetAndClearAnyButtonPress();
   boolean shortButtonPressDetected = (buttonPress == STATE_SHORT);
-  if (shortButtonPressDetected)
-    ProgressToState(STATE_CODE_SENDING);  
-
   boolean longButtonPressDetected = (buttonPress == STATE_LONG);
+  
+  if (shortButtonPressDetected)
+    ProgressToState(STATE_CODE_SENDING); 
+  
   if (longButtonPressDetected)
     ProgressToState(STATE_CODE_CLEAR);
 }
 
 void  stateCodeSending(){
-  // Send code
-  // Transmit
-  // Return to code known
+    for (int repeat = 0; repeat < 5; repeat++)
+    {
+      sendCode(repeat != 0);
+      delay(50); // Wait a bit between retransmissions
+    }
   ProgressToState(STATE_CODE_KNOWN);  
 }
   
@@ -210,12 +215,6 @@ void  stateCodeClear(){
   // Clear any saved state
   ProgressToState(STATE_NO_CODE);
 }
-
-
-
-
-
-
 
 
 /**
@@ -226,7 +225,7 @@ void  stateCodeClear(){
 int codeType = -1; // The type of code
 unsigned long codeValue; // The code value if not raw
 unsigned int rawCodes[RAWBUF]; // The durations if raw
-int codeLen; // The length of the code
+int codeLen; // The length of the co
 int toggle = 0; // The RC5/6 toggle state
 
 // Stores the code for later playback
@@ -293,6 +292,60 @@ void storeCode(decode_results *results) {
     codeLen = results->bits;
   }
 }
+
+void sendCode(int repeat) {
+  if (codeType == NEC) {
+    if (repeat) {
+      irsend.sendNEC(REPEAT, codeLen);
+      Serial.println("Sent NEC repeat");
+    } 
+    else {
+      irsend.sendNEC(codeValue, codeLen);
+      Serial.print("Sent NEC ");
+      Serial.println(codeValue, HEX);
+    }
+  } 
+  else if (codeType == SONY) {
+    irsend.sendSony(codeValue, codeLen);
+    Serial.print("Sent Sony ");
+    Serial.println(codeValue, HEX);
+  } 
+  else if (codeType == PANASONIC) {
+    irsend.sendPanasonic(codeValue, codeLen);
+    Serial.print("Sent Panasonic");
+    Serial.println(codeValue, HEX);
+  }
+  else if (codeType == JVC) {
+    irsend.sendJVC(codeValue, codeLen, false);
+    Serial.print("Sent JVC");
+    Serial.println(codeValue, HEX);
+  }
+  else if (codeType == RC5 || codeType == RC6) {
+    if (!repeat) {
+      // Flip the toggle bit for a new button press
+      toggle = 1 - toggle;
+    }
+    // Put the toggle bit into the code to send
+    codeValue = codeValue & ~(1 << (codeLen - 1));
+    codeValue = codeValue | (toggle << (codeLen - 1));
+    if (codeType == RC5) {
+      Serial.print("Sent RC5 ");
+      Serial.println(codeValue, HEX);
+      irsend.sendRC5(codeValue, codeLen);
+    } 
+    else {
+      irsend.sendRC6(codeValue, codeLen);
+      Serial.print("Sent RC6 ");
+      Serial.println(codeValue, HEX);
+    }
+  } 
+  else if (codeType == UNKNOWN /* i.e. raw */) {
+    // Assume 38 KHz
+    irsend.sendRaw(rawCodes, codeLen, 38);
+    Serial.println("Sent raw");
+  }
+}
+
 
 
 
