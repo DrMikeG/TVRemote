@@ -1,19 +1,37 @@
 #include <IRremote.h>
 
+// Pins to break out:
+//GND
+//Vin
+//D2 in
+//D3 out
+//D9 out
+//D11 in
+
 // LED and Fade
+// LED with resistor to pin D9, other leg to gnd
 #define FADE_LED_PIN 9
 #define LED_PIN 13
 int brightness = 0;    // how bright the LED is
 int fadeAmount = 4;    // how many points to fade the LED by
 
 // IR receiver
+// Facing away from you (bump away from you)
+// Left leg 5V
+// Mid leg GND
+// Right leg D11
 int RECV_PIN = 11;
 IRrecv irrecv(RECV_PIN);
+
+// IR LED 
+// Resistor leg D3
+// Black leg GND
 IRsend irsend;
 decode_results results;
 
 
 // Button press
+// Switch connects gnd to D2
 #define SWITCH_PIN 2 // Pin D2
 #define STATE_NORMAL 0
 #define STATE_SHORT 1
