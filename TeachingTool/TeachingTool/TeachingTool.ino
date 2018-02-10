@@ -197,6 +197,7 @@ void  stateCodeLearning(){
   boolean newCodeLearnt = false;
   //Serial.println("stateCodeLearning");
 
+ 
   if (irrecv.decode(&results)) {
     //Serial.println("decoded");
     storeCode(&results);
@@ -206,6 +207,9 @@ void  stateCodeLearning(){
   
   if (newCodeLearnt)
     ProgressToState(STATE_CODE_KNOWN);
+
+  irrecv.enableIRIn(); // Start the receiver
+ 
 }
 
 void  stateCodeKnown(){
@@ -221,11 +225,20 @@ void  stateCodeKnown(){
 }
 
 void  stateCodeSending(){
-    for (int repeat = 0; repeat < 5; repeat++)
+/*
+    // Working
+  for (int i = 0; i < 3; i++) {
+    irsend.sendSAMSUNG(0xE0E040BF, 32);    
+    delay(40);
+  }
+*/
+
+    for (int repeat = 0; repeat < 1; repeat++)
     {
       sendCode(repeat != 0);
-      delay(50); // Wait a bit between retransmissions
+      delay(5); // Wait a bit between retransmissions
     }
+    
   ProgressToState(STATE_CODE_KNOWN);  
 }
   
@@ -279,6 +292,8 @@ void storeCode(decode_results *results) {
       if (results->value == REPEAT) {
         // Don't record a NEC repeat value as that's useless.
         Serial.println("repeat; ignoring.");
+        // Assuming Samsung TV off...
+        
         return;
       }
     } 
