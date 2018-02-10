@@ -1,21 +1,31 @@
-#define SWITCH_PIN 2 // Pin D2
-#define LED_PIN 13
-#define FADE_LED_PIN 9
+#include <IRremote.h>
 
+// LED and Fade
+#define FADE_LED_PIN 9
+#define LED_PIN 13
+int brightness = 0;    // how bright the LED is
+int fadeAmount = 4;    // how many points to fade the LED by
+
+// IR receiver
+int RECV_PIN = 11;
+IRrecv irrecv(RECV_PIN);
+decode_results results;
+
+// Button press
+#define SWITCH_PIN 2 // Pin D2
+#define STATE_NORMAL 0
+#define STATE_SHORT 1
+#define STATE_LONG 2
+static const byte BUTTON_PIN = 2;
+volatile int  resultButton = 0; // global value set by checkButton()
+volatile int recordedPress = 0;
+
+// Program state
 #define STATE_NO_CODE       0
 #define STATE_CODE_LEARNING 1 // Short button press
 #define STATE_CODE_KNOWN    2
 #define STATE_CODE_SENDING  3 // Short button press
 #define STATE_CODE_CLEAR    4 // Long button press
-
-#define STATE_NORMAL 0
-#define STATE_SHORT 1
-#define STATE_LONG 2
-
-static const byte BUTTON_PIN = 2;
-volatile int  resultButton = 0; // global value set by checkButton()
-volatile int recordedPress = 0;
-
 byte m_currentState;
 
 void setup() {
@@ -32,12 +42,12 @@ void setup() {
   pinMode(LED_PIN,OUTPUT);
   digitalWrite(LED_PIN, LOW );
 
+  irrecv.enableIRIn(); // Start the receiver
+  
   ProgressToState(STATE_NO_CODE);
   
 }
 
-int brightness = 0;    // how bright the LED is
-int fadeAmount = 4;    // how many points to fade the LED by
 
 void SetLEDForSlowFade()
 {
@@ -157,7 +167,6 @@ void loop() {
 }
 
 
-
 void  stateNoCode(){
   boolean longButtonPressDetected = (GetAndClearAnyButtonPress() == STATE_LONG);
   if (longButtonPressDetected)
@@ -166,6 +175,15 @@ void  stateNoCode(){
 
 void  stateCodeLearning(){
   boolean newCodeLearnt = false;
+  //Serial.println("stateCodeLearning");
+
+  if (irrecv.decode(&results)) {
+    //Serial.println("decoded");
+    storeCode(&results);
+    irrecv.resume(); // resume receiver    
+    newCodeLearnt = true;
+  }
+  
   if (newCodeLearnt)
     ProgressToState(STATE_CODE_KNOWN);
 }
@@ -192,6 +210,97 @@ void  stateCodeClear(){
   // Clear any saved state
   ProgressToState(STATE_NO_CODE);
 }
+
+
+
+
+
+
+
+
+/**
+ * IR Code
+ * 
+ */
+// Storage for the recorded code
+int codeType = -1; // The type of code
+unsigned long codeValue; // The code value if not raw
+unsigned int rawCodes[RAWBUF]; // The durations if raw
+int codeLen; // The length of the code
+int toggle = 0; // The RC5/6 toggle state
+
+// Stores the code for later playback
+// Most of this code is just logging
+void storeCode(decode_results *results) {
+  codeType = results->decode_type;
+  //int count = results->rawlen;
+  if (codeType == UNKNOWN) {
+    Serial.println("Received unknown code, saving as raw");
+    codeLen = results->rawlen - 1;
+    // To store raw codes:
+    // Drop first value (gap)
+    // Convert from ticks to microseconds
+    // Tweak marks shorter, and spaces longer to cancel out IR receiver distortion
+    for (int i = 1; i <= codeLen; i++) {
+      if (i % 2) {
+        // Mark
+        rawCodes[i - 1] = results->rawbuf[i]*USECPERTICK - MARK_EXCESS;
+        Serial.print(" m");
+      } 
+      else {
+        // Space
+        rawCodes[i - 1] = results->rawbuf[i]*USECPERTICK + MARK_EXCESS;
+        Serial.print(" s");
+      }
+      Serial.print(rawCodes[i - 1], DEC);
+    }
+    Serial.println("");
+  }
+  else {
+    if (codeType == NEC) {
+      Serial.print("Received NEC: ");
+      if (results->value == REPEAT) {
+        // Don't record a NEC repeat value as that's useless.
+        Serial.println("repeat; ignoring.");
+        return;
+      }
+    } 
+    else if (codeType == SONY) {
+      Serial.print("Received SONY: ");
+    } 
+    else if (codeType == PANASONIC) {
+      Serial.print("Received PANASONIC: ");
+    }
+    else if (codeType == JVC) {
+      Serial.print("Received JVC: ");
+    }
+    else if (codeType == RC5) {
+      Serial.print("Received RC5: ");
+    } 
+    else if (codeType == RC6) {
+      Serial.print("Received RC6: ");
+    } 
+    else if (codeType == SAMSUNG) {
+      Serial.print("Received SAMSUNG: ");
+    } 
+    else {
+      Serial.print("Unexpected codeType ");
+      Serial.print(codeType, DEC);
+      Serial.println("");
+    }
+    Serial.println(results->value, HEX);
+    codeValue = results->value;
+    codeLen = results->bits;
+  }
+}
+
+
+
+
+/**
+ *  Button
+ * 
+ */
 
 void checkButton() {
   const unsigned long LONG_DELTA = 1000ul;               // hold seconds for a long press
