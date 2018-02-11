@@ -45,6 +45,7 @@ IRrecv myReceiver(RECV_PIN); //pin number for the receiver
 // Storage for the recorded code
 IRdecode myDecoder;
 IRsend mySender; // pin 3
+
 uint8_t codeProtocol;  // The type of code
 uint32_t codeValue;    // The data bits if type is not raw
 uint8_t codeBits;      // The length of the code in bits
@@ -266,7 +267,12 @@ void  stateCodeSending(){
   
 void  stateCodeClear(){
   // Clear any saved state
-  ProgressToState(STATE_NO_CODE);
+  codeProtocol =0;
+  codeValue = 0;
+  codeBits = 0;
+  gotNew=false;    
+  gotOne=false;
+  ProgressToState(STATE_CODE_LEARNING);
 }
 
 
